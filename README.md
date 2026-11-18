@@ -6,6 +6,10 @@
 
 Preview and build a browsable website directly from a Markdown directory. The source files are read through a temporary directory link and are never copied or rewritten.
 
+![mdsite-cli rendering a sample Markdown workspace as a browsable website](docs/images/mdsite-demo.png)
+
+The screenshot is generated from the included [example Markdown files](examples/reading-notes/README.md).
+
 ## Quick start
 
 Run this from the Markdown root:
