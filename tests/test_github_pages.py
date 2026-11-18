@@ -11,13 +11,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mdsite_cli.cli import main
-from mdsite_cli.github_pages import (
+from mdsite.cli import main
+from mdsite.github_pages import (
     GitHubPagesError,
     _assert_pages_configuration,
     _get_or_create_repository,
     _git_environment,
     _GitHubApiError,
+    _legacy_pages_marker,
+    _pages_marker,
     _pages_url,
     _publish_branch,
     _validate_built_site,
@@ -60,7 +62,7 @@ class RepositoryApiTests(unittest.TestCase):
             "clone_url": "https://github.com/owner/notes.git",
         }
         with patch(
-            "mdsite_cli.github_pages._api_request",
+            "mdsite.github_pages._api_request",
             side_effect=[
                 _GitHubApiError(404, "missing"),
                 {"login": "owner"},
@@ -91,7 +93,7 @@ class RepositoryApiTests(unittest.TestCase):
     def test_rejects_private_repository(self) -> None:
         with (
             patch(
-                "mdsite_cli.github_pages._api_request",
+                "mdsite.github_pages._api_request",
                 return_value={"private": True, "clone_url": "https://github.com/owner/notes.git"},
             ),
             self.assertRaisesRegex(GitHubPagesError, "公开"),
@@ -115,9 +117,9 @@ class TokenTests(unittest.TestCase):
     def test_gh_token_is_used_when_environment_is_empty(self) -> None:
         with (
             patch.dict(os.environ, {}, clear=True),
-            patch("mdsite_cli.github_pages.shutil.which", return_value="gh"),
+            patch("mdsite.github_pages.shutil.which", return_value="gh"),
             patch(
-                "mdsite_cli.github_pages.subprocess.run",
+                "mdsite.github_pages.subprocess.run",
                 return_value=subprocess.CompletedProcess([], 0, stdout="from-gh\n", stderr=""),
             ) as run,
         ):
@@ -171,7 +173,7 @@ class BuiltSiteSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             site = Path(directory)
             (site / "index.html").write_text("page", encoding="utf-8")
-            for name in (".git", ".mdsite-cli-pages"):
+            for name in (".git", ".mdsite-pages", ".mdsite-cli-pages"):
                 with self.subTest(name=name):
                     target = site / name
                     if name == ".git":
@@ -282,6 +284,40 @@ class PagesBranchTests(unittest.TestCase):
             self._deploy(repository="second", exists=True)
         self.assertEqual(self._remote_file("index.html"), "first")
 
+    def test_upgrades_legacy_marker_without_losing_site(self) -> None:
+        repository = Path(self.temporary.name) / "legacy"
+        repository.mkdir()
+        self._git("init", str(repository))
+        self._git("checkout", "-b", "gh-pages", cwd=repository)
+        self._git("config", "user.name", "test", cwd=repository)
+        self._git("config", "user.email", "test@example.test", cwd=repository)
+        (repository / ".mdsite-cli-pages").write_text(
+            _legacy_pages_marker("owner/repo"), encoding="utf-8"
+        )
+        (repository / "index.html").write_text("old site", encoding="utf-8")
+        self._git("add", "--all", cwd=repository)
+        self._git("commit", "-m", "old mdsite deployment", cwd=repository)
+        self._git("remote", "add", "origin", str(self.remote), cwd=repository)
+        self._git("push", "origin", "gh-pages", cwd=repository)
+
+        self.assertTrue(self._deploy(exists=True))
+
+        self.assertEqual(self._remote_file("index.html"), "first")
+        self.assertEqual(self._remote_file(".mdsite-pages"), _pages_marker("owner/repo").strip())
+        result = subprocess.run(
+            [
+                shutil.which("git") or "git",
+                "--git-dir",
+                str(self.remote),
+                "cat-file",
+                "-e",
+                "gh-pages:.mdsite-cli-pages",
+            ],
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+
 
 @unittest.skipUnless(shutil.which("git"), "需要 Git 执行本地发布集成测试")
 class PublishCommandIntegrationTests(unittest.TestCase):
@@ -314,13 +350,13 @@ class PublishCommandIntegrationTests(unittest.TestCase):
                 self.fail(f"未预期的 GitHub API 请求：{method} {path}")
 
             with (
-                patch("mdsite_cli.cli.resolve_token", return_value="in-memory-token"),
+                patch("mdsite.cli.resolve_token", return_value="in-memory-token"),
                 patch(
-                    "mdsite_cli.github_pages._get_or_create_repository",
+                    "mdsite.github_pages._get_or_create_repository",
                     return_value={"private": False, "clone_url": str(remote)},
                 ),
-                patch("mdsite_cli.github_pages._read_pages", return_value=None),
-                patch("mdsite_cli.github_pages._api_request", side_effect=fake_api),
+                patch("mdsite.github_pages._read_pages", return_value=None),
+                patch("mdsite.github_pages._api_request", side_effect=fake_api),
             ):
                 result = main(["publish", "--path", str(source), "--repository", "owner/notes"])
 

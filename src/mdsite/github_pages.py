@@ -17,7 +17,8 @@ from urllib.request import Request, urlopen
 _API_URL = "https://api.github.com"
 _API_VERSION = "2026-03-10"
 _PAGES_BRANCH = "gh-pages"
-_PAGES_MARKER = ".mdsite-cli-pages"
+_PAGES_MARKER = ".mdsite-pages"
+_LEGACY_PAGES_MARKER = ".mdsite-cli-pages"
 
 
 class GitHubPagesError(RuntimeError):
@@ -120,7 +121,7 @@ def _api_request(
         headers={
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {token}",
-            "User-Agent": "mdsite-cli",
+            "User-Agent": "mdsite",
             "X-GitHub-Api-Version": _API_VERSION,
             **({"Content-Type": "application/json"} if body is not None else {}),
         },
@@ -343,6 +344,11 @@ def _is_link(path: Path) -> bool:
 
 
 def _pages_marker(repository: str) -> str:
+    return f"mdsite-github-pages\nrepository={repository.casefold()}\nbranch={_PAGES_BRANCH}\n"
+
+
+def _legacy_pages_marker(repository: str) -> str:
+    """识别旧项目名写入的 Pages 所有权标记。"""
     return f"mdsite-cli-github-pages\nrepository={repository.casefold()}\nbranch={_PAGES_BRANCH}\n"
 
 
@@ -352,10 +358,8 @@ def _validate_built_site(site: Path) -> None:
     for path in site.rglob("*"):
         if path.name == ".git":
             raise GitHubPagesError("网页产物包含 .git 路径，不能安全发布。")
-        if path.name == _PAGES_MARKER:
-            raise GitHubPagesError(
-                f"网页产物占用了保留文件 {_PAGES_MARKER}，请重命名源文件后重试。"
-            )
+        if path.name in {_PAGES_MARKER, _LEGACY_PAGES_MARKER}:
+            raise GitHubPagesError(f"网页产物占用了保留文件 {path.name}，请重命名源文件后重试。")
         if _is_link(path):
             raise GitHubPagesError(f"网页产物包含链接，不能安全发布：{path.relative_to(site)}")
 
@@ -390,15 +394,24 @@ def _publish_branch(
                 environment=environment,
             )
             marker = working_copy / _PAGES_MARKER
-            if _is_link(marker) or not marker.is_file():
+            legacy_marker = working_copy / _LEGACY_PAGES_MARKER
+            has_marker = os.path.lexists(marker)
+            has_legacy_marker = os.path.lexists(legacy_marker)
+            if has_marker and has_legacy_marker:
+                raise GitHubPagesError("gh-pages 同时包含新旧所有权标记，拒绝覆盖。")
+            existing_marker = marker if has_marker else legacy_marker
+            if _is_link(existing_marker) or not existing_marker.is_file():
                 raise GitHubPagesError(
                     "gh-pages 分支没有 mdsite 所有权标记；为保护现有内容，拒绝覆盖。"
                 )
             try:
-                existing_marker = marker.read_text(encoding="utf-8")
+                existing_marker_value = existing_marker.read_text(encoding="utf-8")
             except (OSError, UnicodeError) as exc:
                 raise GitHubPagesError("无法读取 gh-pages 所有权标记，拒绝覆盖。") from exc
-            if existing_marker != marker_value:
+            accepted_markers = {_pages_marker(full_name)}
+            if existing_marker == legacy_marker:
+                accepted_markers.add(_legacy_pages_marker(full_name))
+            if existing_marker_value not in accepted_markers:
                 raise GitHubPagesError(
                     "gh-pages 所有权标记与目标仓库不匹配；为保护现有内容，拒绝覆盖。"
                 )
@@ -438,13 +451,13 @@ def _publish_branch(
         shutil.copytree(site, working_copy, dirs_exist_ok=True)
         (working_copy / ".nojekyll").touch()
         (working_copy / _PAGES_MARKER).write_text(marker_value, encoding="utf-8")
-        _git("-C", str(working_copy), "config", "user.name", "mdsite-cli", environment=environment)
+        _git("-C", str(working_copy), "config", "user.name", "mdsite", environment=environment)
         _git(
             "-C",
             str(working_copy),
             "config",
             "user.email",
-            "mdsite-cli@users.noreply.github.com",
+            "mdsite@users.noreply.github.com",
             environment=environment,
         )
         _git("-C", str(working_copy), "add", "--all", "--force", environment=environment)
@@ -470,7 +483,7 @@ def _publish_branch(
             str(working_copy),
             "commit",
             "-m",
-            "Publish site with mdsite-cli",
+            "Publish site with mdsite",
             environment=environment,
         )
         _git(

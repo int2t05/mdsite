@@ -165,7 +165,7 @@ def _zensical_command(*arguments: str) -> list[str]:
     """定位当前 uvx 环境中的 Zensical 命令。"""
     executable = shutil.which("zensical")
     if executable is None:
-        raise MdsiteError("找不到 Zensical 命令，请检查 mdsite-cli 的安装环境。")
+        raise MdsiteError("找不到 Zensical 命令，请检查 mdsite 的安装环境。")
     return [executable, *arguments]
 
 
@@ -230,6 +230,14 @@ def _marker_value(output: Path, source: Path) -> str:
     output_key = os.path.normcase(str(output.resolve(strict=False)))
     source_key = os.path.normcase(str(source.resolve(strict=True)))
     digest = hashlib.sha256(f"{source_key}\0{output_key}".encode())
+    return f"mdsite\n{digest.hexdigest()}\n"
+
+
+def _legacy_marker_value(output: Path, source: Path) -> str:
+    """识别旧版本写入的本地构建归属标记。"""
+    output_key = os.path.normcase(str(output.resolve(strict=False)))
+    source_key = os.path.normcase(str(source.resolve(strict=True)))
+    digest = hashlib.sha256(f"{source_key}\0{output_key}".encode())
     return f"mdsite-cli\n{digest.hexdigest()}\n"
 
 
@@ -241,9 +249,10 @@ def _has_output_marker(output: Path, source: Path) -> bool:
         return False
     marker = output / _MARKER_NAME
     try:
-        return marker.is_file() and marker.read_text(encoding="utf-8") == _marker_value(
-            output, source
-        )
+        return marker.is_file() and marker.read_text(encoding="utf-8") in {
+            _marker_value(output, source),
+            _legacy_marker_value(output, source),
+        }
     except (OSError, UnicodeError):
         return False
 

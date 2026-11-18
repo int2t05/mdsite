@@ -9,8 +9,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from unittest.mock import patch
 
-from mdsite_cli.cli import (
+from mdsite.cli import (
     MdsiteError,
+    _legacy_marker_value,
     _marker_value,
     _owned_output,
     _parser,
@@ -92,6 +93,25 @@ class OutputSafetyTests(unittest.TestCase):
             with self.assertRaises(MdsiteError):
                 _owned_output(copied_output, source)
 
+    def test_legacy_marker_remains_owned_and_is_upgraded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "notes"
+            source.mkdir()
+            output = source / "site"
+            output.mkdir()
+            marker = output / ".mdsite-generated"
+            marker.write_text(_legacy_marker_value(output, source), encoding="utf-8")
+            built = root / "built"
+            built.mkdir()
+            (built / "index.html").write_text("updated", encoding="utf-8")
+
+            self.assertTrue(_owned_output(output, source))
+            _publish_site(built, output, source)
+
+            self.assertEqual((output / "index.html").read_text(encoding="utf-8"), "updated")
+            self.assertEqual(marker.read_text(encoding="utf-8"), _marker_value(output, source))
+
     def test_output_rejects_source_and_nested_custom_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "notes"
@@ -154,7 +174,7 @@ class CommandTests(unittest.TestCase):
         args = _parser().parse_args(
             [
                 "publish",
-                "--repository",
+                "--repo",
                 "owner/notes",
                 "--token-env",
                 "NOTES_TOKEN",
@@ -197,13 +217,13 @@ class CommandTests(unittest.TestCase):
                         "NOTES_TOKEN": "custom-token",
                     },
                 ),
-                patch("mdsite_cli.cli.resolve_token", return_value="resolved-token"),
-                patch("mdsite_cli.cli._build_and_use", side_effect=use_built_site),
+                patch("mdsite.cli.resolve_token", return_value="resolved-token"),
+                patch("mdsite.cli._build_and_use", side_effect=use_built_site),
                 patch(
-                    "mdsite_cli.cli.publish_site",
+                    "mdsite.cli.publish_site",
                     return_value="https://owner.github.io/notes/",
                 ) as publish,
-                patch("mdsite_cli.cli.webbrowser.open", return_value=True) as open_browser,
+                patch("mdsite.cli.webbrowser.open", return_value=True) as open_browser,
             ):
                 result = main(
                     [

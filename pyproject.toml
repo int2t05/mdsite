@@ -1,13 +1,13 @@
 [project]
-name = "mdsite-cli"
-version = "0.1.1"
+name = "mdsite"
+version = "0.1.2"
 description = "Preview and build websites directly from Markdown directories"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["zensical==0.1.2"]
-keywords = ["markdown", "documentation", "zensical", "cli"]
+keywords = ["markdown", "documentation", "zensical", "static-site-generator"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -22,19 +22,19 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/int2t05/mdsite-cli"
-Issues = "https://github.com/int2t05/mdsite-cli/issues"
-Source = "https://github.com/int2t05/mdsite-cli"
+Homepage = "https://github.com/int2t05/mdsite"
+Issues = "https://github.com/int2t05/mdsite/issues"
+Source = "https://github.com/int2t05/mdsite"
 
 [project.scripts]
-mdsite = "mdsite_cli.cli:main"
+mdsite = "mdsite.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mdsite_cli"]
+packages = ["src/mdsite"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/**", "tests/**", "pyproject.toml", "README.md", "LICENSE", "uv.lock"]
