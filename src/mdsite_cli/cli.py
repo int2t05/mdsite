@@ -12,10 +12,13 @@ import subprocess
 import sys
 import tempfile
 import uuid
-from collections.abc import Iterator
+import webbrowser
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
+
+from .github_pages import GitHubPagesError, publish_site, resolve_token
 
 _MARKER_NAME = ".mdsite-generated"
 
@@ -282,19 +285,72 @@ def _publish_site(built_site: Path, output: Path, source: Path) -> None:
             shutil.rmtree(staging)
 
 
-def _run_build(source: Path, requested_output: Path | None) -> int:
-    output, output_to_exclude = _resolve_output(source, requested_output)
-    _owned_output(output, source)
+def _build_and_use(
+    source: Path,
+    output_to_exclude: Path | None,
+    consume_site: Callable[[Path], None],
+    environment: Mapping[str, str] | None = None,
+) -> int:
+    """构建到临时目录，并在目录清理前交给调用方使用。"""
     with _project_workspace(source, output_to_exclude) as (workspace, config):
         command = _zensical_command("build", "--config-file", str(config))
-        result = subprocess.run(command, cwd=workspace, check=False)
+        result = subprocess.run(command, cwd=workspace, check=False, env=environment)
         if result.returncode != 0:
             return result.returncode
         built_site = workspace / "site"
         if not (built_site / "index.html").is_file():
             raise MdsiteError("Zensical 构建结束，但没有生成 index.html。")
-        _publish_site(built_site, output, source)
+        consume_site(built_site)
+    return 0
+
+
+def _run_build(source: Path, requested_output: Path | None) -> int:
+    output, output_to_exclude = _resolve_output(source, requested_output)
+    _owned_output(output, source)
+    result = _build_and_use(
+        source,
+        output_to_exclude,
+        lambda built_site: _publish_site(built_site, output, source),
+    )
+    if result != 0:
+        return result
     print(f"静态网页已生成：{output}")
+    return 0
+
+
+def _run_publish(source: Path, args: argparse.Namespace) -> int:
+    """构建当前 Markdown 目录，并发布到指定公开仓库。"""
+    token = resolve_token(None, args.token_env)
+    build_environment = os.environ.copy()
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", args.token_env):
+        if name:
+            build_environment.pop(name, None)
+    default_output = source / "site"
+    output_to_exclude = default_output if _has_output_marker(default_output, source) else None
+    published_url: list[str] = []
+
+    def publish(built_site: Path) -> None:
+        url = publish_site(
+            built_site,
+            args.repository,
+            explicit_token=token,
+            token_environment=args.token_env,
+            create_repository=args.create_repository,
+            description=args.description,
+            configure_pages=args.configure_pages,
+        )
+        published_url.append(url)
+
+    result = _build_and_use(
+        source,
+        output_to_exclude,
+        publish,
+        environment=build_environment,
+    )
+    if result != 0:
+        return result
+    if args.open and published_url and not webbrowser.open(published_url[0]):
+        print(f"无法自动打开浏览器，请手动访问：{published_url[0]}")
     return 0
 
 
@@ -336,6 +392,41 @@ def _parser() -> argparse.ArgumentParser:
     )
     build.add_argument("--output", type=Path, help="输出目录，默认根目录下的 site/")
 
+    publish = commands.add_parser(
+        "publish",
+        help="构建并发布到 GitHub Pages（公开网站）",
+        description="将当前 Markdown 目录构建后发布到公开 GitHub 仓库的 gh-pages 分支。",
+    )
+    publish.add_argument(
+        "--path",
+        type=Path,
+        default=argparse.SUPPRESS,
+        help="Markdown 根目录，默认当前目录",
+    )
+    publish.add_argument(
+        "--repository",
+        "--repo",
+        required=True,
+        help="目标仓库，格式为 owner/repo 或 GitHub HTTPS URL",
+    )
+    publish.add_argument(
+        "--token-env",
+        metavar="NAME",
+        help="从指定环境变量读取 GitHub token；默认读取 GH_TOKEN、GITHUB_TOKEN 或 gh 登录",
+    )
+    publish.add_argument(
+        "--create-repository",
+        action="store_true",
+        help="仓库不存在时创建公开仓库",
+    )
+    publish.add_argument("--description", default="", help="新建仓库的描述")
+    publish.add_argument(
+        "--configure-pages",
+        action="store_true",
+        help="确认后将现有 Pages 来源切换到 gh-pages 根目录",
+    )
+    publish.add_argument("--open", action="store_true", help="发布后尝试打开网站")
+
     return parser
 
 
@@ -357,12 +448,17 @@ def main(argv: list[str] | None = None) -> int:
         source = _source_path(args.path)
         if args.command == "build":
             return _run_build(source, args.output)
+        if args.command == "publish":
+            return _run_publish(source, args)
         return _run_preview(
             source,
             getattr(args, "port", 8000),
             not getattr(args, "no_open", False),
         )
     except MdsiteError as exc:
+        print(f"mdsite: {exc}", file=sys.stderr)
+        return 2
+    except GitHubPagesError as exc:
         print(f"mdsite: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:

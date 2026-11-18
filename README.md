@@ -38,6 +38,32 @@ uvx --from git+https://github.com/int2t05/mdsite-cli mdsite build --path "D:\not
 
 `build` refuses to replace an existing directory unless its ownership marker matches both the source and output paths. Custom output directories must be outside the Markdown root.
 
+## Publish a public GitHub Pages site
+
+`publish` builds the Markdown directory and uploads the generated website to the `gh-pages` branch. It does not copy Markdown source files into the repository. GitHub Pages websites are public, so publish only material that is safe to share.
+
+Sign in once with GitHub CLI:
+
+~~~powershell
+gh auth login
+~~~
+
+Publish to an existing public repository:
+
+~~~powershell
+uvx --from git+https://github.com/int2t05/mdsite-cli mdsite publish --path "D:\notes" --repository "owner/notes" --open
+~~~
+
+If the repository does not exist, add `--create-repository` to create it as a public repository:
+
+~~~powershell
+uvx --from git+https://github.com/int2t05/mdsite-cli mdsite publish --path "D:\notes" --repository "owner/notes" --create-repository --open
+~~~
+
+The command takes the repository on every run and stores no project state. Credentials are read from `GH_TOKEN`, then `GITHUB_TOKEN`, then an existing `gh` login. To use a differently named environment variable, pass `--token-env NAME`; the token itself is never accepted as a command-line argument or written to the project.
+
+For a fine-grained token, grant repository Contents: write for an existing repository. Creating a repository also needs repository creation permission. Creating or changing the Pages source needs Pages: write and Administration: write. Classic tokens generally need the `repo` scope. If the repository already uses another Pages source, the command stops; add `--configure-pages` only when you intend to switch it to `gh-pages` at the repository root. The first publish creates an ownership marker on `gh-pages`; later runs update only a branch with the matching marker, remove stale generated files, and use a normal fast-forward push.
+
 ## Features and limits
 
 - Reads the folder tree directly; the source directory is not rewritten.

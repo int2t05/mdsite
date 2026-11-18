@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import tempfile
 import unittest
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from unittest.mock import patch
 
@@ -148,6 +149,82 @@ class CommandTests(unittest.TestCase):
         args = _parser().parse_args([])
         self.assertIsNone(args.command)
         self.assertEqual(args.path, None)
+
+    def test_publish_command_accepts_stateless_repository_and_token_source(self) -> None:
+        args = _parser().parse_args(
+            [
+                "publish",
+                "--repository",
+                "owner/notes",
+                "--token-env",
+                "NOTES_TOKEN",
+                "--create-repository",
+                "--configure-pages",
+            ]
+        )
+        self.assertEqual(args.command, "publish")
+        self.assertEqual(args.repository, "owner/notes")
+        self.assertEqual(args.token_env, "NOTES_TOKEN")
+        self.assertTrue(args.create_repository)
+        self.assertTrue(args.configure_pages)
+
+    def test_publish_builds_then_opens_returned_pages_url(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "notes"
+            source.mkdir()
+            built_site = root / "built-site"
+            built_site.mkdir()
+
+            def use_built_site(
+                _source: Path,
+                _output_to_exclude: Path | None,
+                consume_site: Callable[[Path], None],
+                *,
+                environment: Mapping[str, str] | None = None,
+            ) -> int:
+                captured_environment.update(environment or {})
+                consume_site(built_site)
+                return 0
+
+            captured_environment: dict[str, str] = {}
+            with (
+                patch.dict(
+                    "os.environ",
+                    {
+                        "GH_TOKEN": "token-from-gh-env",
+                        "GITHUB_TOKEN": "fallback-token",
+                        "NOTES_TOKEN": "custom-token",
+                    },
+                ),
+                patch("mdsite_cli.cli.resolve_token", return_value="resolved-token"),
+                patch("mdsite_cli.cli._build_and_use", side_effect=use_built_site),
+                patch(
+                    "mdsite_cli.cli.publish_site",
+                    return_value="https://owner.github.io/notes/",
+                ) as publish,
+                patch("mdsite_cli.cli.webbrowser.open", return_value=True) as open_browser,
+            ):
+                result = main(
+                    [
+                        "publish",
+                        "--path",
+                        str(source),
+                        "--repository",
+                        "owner/notes",
+                        "--token-env",
+                        "NOTES_TOKEN",
+                        "--open",
+                    ]
+                )
+
+            self.assertEqual(result, 0)
+            self.assertEqual(publish.call_args.kwargs["explicit_token"], "resolved-token")
+            self.assertEqual(publish.call_args.kwargs["token_environment"], "NOTES_TOKEN")
+            open_browser.assert_called_once_with("https://owner.github.io/notes/")
+            self.assertNotIn("GH_TOKEN", captured_environment)
+            self.assertNotIn("GITHUB_TOKEN", captured_environment)
+            self.assertNotIn("NOTES_TOKEN", captured_environment)
 
     def test_build_generates_site_and_can_repeat(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
