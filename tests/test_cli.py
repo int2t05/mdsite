@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mdsite_cli.cli import (
     MdsiteError,
@@ -100,7 +102,7 @@ class OutputSafetyTests(unittest.TestCase):
                 _resolve_output(source, source / "generated")
 
             output, excluded = _resolve_output(source, None)
-            self.assertEqual(output, source / "site")
+            self.assertEqual(output, source.resolve() / "site")
             self.assertEqual(excluded, output)
 
     def test_owned_site_is_replaced_without_stale_files(self) -> None:
@@ -126,6 +128,21 @@ class OutputSafetyTests(unittest.TestCase):
 
 class CommandTests(unittest.TestCase):
     """验证入口参数与 Zensical 静态构建。"""
+
+    def test_help_works_with_ascii_console_encoding(self) -> None:
+        buffer = io.BytesIO()
+        stream = io.TextIOWrapper(buffer, encoding="ascii")
+        try:
+            with patch("sys.stdout", stream):
+                with self.assertRaises(SystemExit) as result:
+                    main(["--help"])
+
+            self.assertEqual(result.exception.code, 0)
+            stream.flush()
+            self.assertIn(b"mdsite", buffer.getvalue())
+            self.assertIn(b"\\u", buffer.getvalue())
+        finally:
+            stream.detach()
 
     def test_no_subcommand_defaults_to_preview(self) -> None:
         args = _parser().parse_args([])

@@ -199,6 +199,7 @@ def _is_reparse_point(path: Path) -> bool:
 
 def _resolve_output(source: Path, requested: Path | None) -> tuple[Path, Path | None]:
     """限制输出位置，避免覆盖源目录或把构建结果再次打包。"""
+    source = source.resolve(strict=True)
     output = (requested if requested is not None else source / "site").expanduser()
     if not output.is_absolute():
         output = source / output
@@ -338,7 +339,19 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _configure_console() -> None:
+    """让非 UTF-8 控制台转义不可编码字符，避免命令意外崩溃。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(errors="backslashreplace")
+            except (OSError, ValueError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_console()
     args = _parser().parse_args(argv)
     try:
         source = _source_path(args.path)
