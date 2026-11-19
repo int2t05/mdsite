@@ -168,7 +168,7 @@ def write_source_pages(source: Path, docs: Path) -> int:
                     "",
                     "原文件只通过临时目录链接读取；此页面不会改写源文件。",
                     "",
-                    f"```{language} linenums=\"1\"",
+                    f'```{language} linenums="1"',
                     f"--8<-- {snippet_path}",
                     "```",
                     "",

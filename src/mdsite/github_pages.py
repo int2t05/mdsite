@@ -162,11 +162,7 @@ def _git_identity(profile: dict[str, object]) -> tuple[str, str]:
     login = login.strip()
 
     email = profile.get("email")
-    if (
-        isinstance(email, str)
-        and "@" in email.strip()
-        and not any(c in email for c in "\r\n\0")
-    ):
+    if isinstance(email, str) and "@" in email.strip() and not any(c in email for c in "\r\n\0"):
         return login, email.strip()
 
     user_id = profile.get("id")
