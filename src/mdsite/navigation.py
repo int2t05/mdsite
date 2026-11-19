@@ -31,6 +31,8 @@ def _insert(root: _Directory, relative: Path, entry: NavValue, priority: int) ->
 
 def _directory_title(name: str) -> str:
     """让编号目录在导航中以空格分隔编号和标题。"""
+    if name.casefold() == "examples":
+        return "Examples"
     match = re.fullmatch(r"(\d+)-(.+)", name)
     return f"{match.group(1)} {match.group(2)}" if match else name
 
