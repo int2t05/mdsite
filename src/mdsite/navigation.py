@@ -65,8 +65,10 @@ def build_navigation(source: Path, source_pages: list[Path]) -> list[NavValue]:
     root = _Directory()
     for relative in source_markdown_paths(source):
         route = (Path("source") / relative).as_posix()
-        priority = 0 if relative.name.casefold() in {"index.md", "readme.md"} else 1
-        _insert(root, relative, route, priority)
+        is_section_index = relative.stem.casefold() in {"index", "readme"}
+        entry = route if is_section_index else {relative.stem: route}
+        priority = 0 if is_section_index else 1
+        _insert(root, relative, entry, priority)
 
     for relative in source_pages:
         route = (Path("files") / relative.parent / f"{relative.name}.md").as_posix()
