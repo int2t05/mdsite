@@ -39,7 +39,7 @@ Run the same command again to update the site. `mdsite` rebuilds navigation and 
 ## Features
 
 - Markdown, Mermaid diagrams, and MathJax formulas.
-- Navigation uses Markdown filenames and preserves headings for `README`/`index` section pages. Read-only pages for Python and common text/code files appear under their original folders, with syntax highlighting and line numbers. Supported types include `.py`, `.pyi`, `.txt`, `.json`, YAML, TOML, INI, shell, PowerShell, JavaScript/TypeScript, HTML/CSS, SQL, R, Julia, Rust, Go, Java, C/C++, XML, TeX, CSV, and diff. UTF-8 files up to 1 MiB are shown; hidden files, links, and common build/cache directories are skipped.
+- The homepage shows the source root's `README.md` or `index.md`; otherwise it lists browsable files and folders. Folder names link to their `README.md` or `index.md`, and folders without either get a generated listing page. Read-only pages for Python and common text/code files appear under their original folders, with syntax highlighting and line numbers. Supported types include `.py`, `.pyi`, `.txt`, `.json`, YAML, TOML, INI, shell, PowerShell, JavaScript/TypeScript, HTML/CSS, SQL, R, Julia, Rust, Go, Java, C/C++, XML, TeX, CSV, and diff. UTF-8 files up to 1 MiB are shown; hidden files, links, and common build/cache directories are skipped.
 - Source files stay in their original folder.
 - Python 3.11 or newer.
 

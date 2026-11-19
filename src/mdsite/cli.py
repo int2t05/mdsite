@@ -16,7 +16,6 @@ import webbrowser
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from urllib.parse import quote
 
 from .github_pages import GitHubPagesError, publish_site, resolve_token
 from .navigation import build_navigation, toml_navigation
@@ -85,7 +84,7 @@ def _write_workspace(
     source_link = docs / "source"
     _create_directory_link(source_link, source)
     source_pages = write_source_pages(source_link, docs)
-    navigation = build_navigation(source_link, source_pages)
+    navigation = build_navigation(source_link, source_pages, docs)
 
     overrides = workspace / "overrides"
     overrides.mkdir()
@@ -93,19 +92,13 @@ def _write_workspace(
     shutil.copyfile(bundled_template, overrides / "main.html")
 
     title = source.name or "Markdown"
-    intro = [
-        f"# {title}",
-        "",
-        "此站点直接读取原目录中的 Markdown 文件，不会复制或改写源文件。",
-        "",
-        "请从左侧目录浏览文档和源码。",
+    excluded = [
+        "/**",
+        "!/source/**",
+        "!/files/**",
+        "!/directory-index/**",
+        "!/index.md",
     ]
-    readme = source / "README.md"
-    if readme.is_file():
-        intro.extend(["", f"[打开 README](source/{quote(readme.name)})"])
-    (docs / "index.md").write_text("\n".join(intro) + "\n", encoding="utf-8")
-
-    excluded = ["/**", "!/source/**", "!/files/**", "!/index.md"]
     if output_to_exclude is not None:
         relative_output = output_to_exclude.relative_to(source).as_posix()
         excluded.append(f"/source/{relative_output}/**")
@@ -126,6 +119,7 @@ def _write_workspace(
                 "[project.theme]",
                 'language = "zh"',
                 'custom_dir = "overrides"',
+                'features = ["navigation.indexes"]',
                 "",
                 "[project.markdown_extensions]",
                 "pymdownx.highlight.anchor_linenums = true",
