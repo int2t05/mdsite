@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .github_pages import GitHubPagesError, publish_site, resolve_token
+from .navigation import build_navigation, toml_navigation
 from .source_pages import write_source_pages
 
 _MARKER_NAME = ".mdsite-generated"
@@ -83,7 +84,8 @@ def _write_workspace(
     docs.mkdir(parents=True)
     source_link = docs / "source"
     _create_directory_link(source_link, source)
-    source_page_count = write_source_pages(source_link, docs)
+    source_pages = write_source_pages(source_link, docs)
+    navigation = build_navigation(source_link, source_pages)
 
     overrides = workspace / "overrides"
     overrides.mkdir()
@@ -96,15 +98,8 @@ def _write_workspace(
         "",
         "此站点直接读取原目录中的 Markdown 文件，不会复制或改写源文件。",
         "",
-        "请从左侧导航的 **source** 分类浏览文档。",
+        "请从左侧目录浏览文档和源码。",
     ]
-    if source_page_count:
-        intro.extend(
-            [
-                "",
-                "常见源码和文本文件也可在[源码与文本文件](files/)中按目录浏览。",
-            ]
-        )
     readme = source / "README.md"
     if readme.is_file():
         intro.extend(["", f"[打开 README](source/{quote(readme.name)})"])
@@ -125,6 +120,7 @@ def _write_workspace(
                 'site_dir = "site"',
                 f"watch = [{_toml_string(str(source))}]",
                 "exclude_docs = {}".format(_toml_string("\n".join(excluded))),
+                toml_navigation(navigation),
                 'extra_javascript = ["https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"]',
                 "",
                 "[project.theme]",

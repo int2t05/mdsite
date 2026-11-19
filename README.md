@@ -39,7 +39,7 @@ Run the same command again to update the site. `mdsite` rebuilds navigation and 
 ## Features
 
 - Markdown, Mermaid diagrams, and MathJax formulas.
-- Read-only pages for Python and common text/code files, with syntax highlighting and line numbers. Supported types include `.py`, `.pyi`, `.txt`, `.json`, YAML, TOML, INI, shell, PowerShell, JavaScript/TypeScript, HTML/CSS, SQL, R, Julia, Rust, Go, Java, C/C++, XML, TeX, CSV, and diff. UTF-8 files up to 1 MiB are shown; hidden files, links, and common build/cache directories are skipped.
+- Read-only pages for Python and common text/code files appear under their original folders in the navigation, with syntax highlighting and line numbers. Supported types include `.py`, `.pyi`, `.txt`, `.json`, YAML, TOML, INI, shell, PowerShell, JavaScript/TypeScript, HTML/CSS, SQL, R, Julia, Rust, Go, Java, C/C++, XML, TeX, CSV, and diff. UTF-8 files up to 1 MiB are shown; hidden files, links, and common build/cache directories are skipped.
 - Source files stay in their original folder.
 - Python 3.11 or newer.
 

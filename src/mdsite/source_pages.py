@@ -150,11 +150,35 @@ def _source_files(source: Path) -> list[tuple[Path, str]]:
     return discovered
 
 
-def write_source_pages(source: Path, docs: Path) -> int:
+def source_markdown_paths(source: Path) -> list[Path]:
+    """收集可进入目录导航的 Markdown 相对路径。"""
+    discovered: list[Path] = []
+    for directory, subdirectories, filenames in os.walk(source, topdown=True, followlinks=False):
+        parent = Path(directory)
+        subdirectories[:] = sorted(
+            name
+            for name in subdirectories
+            if not _is_hidden(parent / name)
+            and name.casefold() not in _SKIPPED_DIRECTORIES
+            and not _is_link(parent / name)
+        )
+        for name in filenames:
+            path = parent / name
+            if (
+                path.suffix.casefold() not in {".md", ".markdown"}
+                or _is_hidden(path)
+                or _is_link(path)
+            ):
+                continue
+            discovered.append(path.relative_to(source))
+    return sorted(discovered, key=lambda path: path.as_posix().casefold())
+
+
+def write_source_pages(source: Path, docs: Path) -> list[Path]:
     """在临时文档目录写入源码页；正文由 snippets 从源目录读取。"""
     files = _source_files(source)
     if not files:
-        return 0
+        return []
 
     pages = docs / "files"
     for relative, language in files:
@@ -177,19 +201,4 @@ def write_source_pages(source: Path, docs: Path) -> int:
             encoding="utf-8",
         )
 
-    (pages / "index.md").write_text(
-        "\n".join(
-            [
-                "# 源码与文本文件",
-                "",
-                f"此目录提供 {len(files)} 个 UTF-8 源码或文本文件的只读浏览页。",
-                "支持 Python、常见配置、Shell、PowerShell、JavaScript/TypeScript、"
-                "HTML/CSS、SQL、R、Julia、Rust、Go、Java、C/C++、XML、LaTeX、CSV 和 diff。",
-                "源码按原目录结构列在左侧导航中；隐藏文件、链接目录、常见构建目录、"
-                "二进制文件和超过 1 MiB 的文件不会生成页面。",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    return len(files)
+    return [relative for relative, _ in files]
