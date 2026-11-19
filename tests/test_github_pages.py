@@ -17,6 +17,7 @@ from mdsite.github_pages import (
     _assert_pages_configuration,
     _get_or_create_repository,
     _git_environment,
+    _git_identity,
     _GitHubApiError,
     _legacy_pages_marker,
     _pages_marker,
@@ -89,6 +90,28 @@ class RepositoryApiTests(unittest.TestCase):
                 "description": "Research notes",
             },
         )
+
+
+class GitIdentityTests(unittest.TestCase):
+    """发布提交使用当前 GitHub 账号，并避免公开隐藏邮箱。"""
+
+    def test_uses_public_email_when_available(self) -> None:
+        self.assertEqual(
+            _git_identity({"id": 123, "login": "octocat", "email": "octo@example.com"}),
+            ("octocat", "octo@example.com"),
+        )
+
+    def test_uses_id_based_noreply_email_when_profile_email_is_private(self) -> None:
+        self.assertEqual(
+            _git_identity({"id": 123, "login": "octocat", "email": None}),
+            ("octocat", "123+octocat@users.noreply.github.com"),
+        )
+
+    def test_rejects_incomplete_or_unsafe_profile(self) -> None:
+        profiles = ({"id": 123}, {"id": 0, "login": "octocat"}, {"login": "bad\nname"})
+        for profile in profiles:
+            with self.subTest(profile=profile), self.assertRaises(GitHubPagesError):
+                _git_identity(profile)
 
     def test_rejects_private_repository(self) -> None:
         with (
@@ -229,6 +252,7 @@ class PagesBranchTests(unittest.TestCase):
             str(self.remote),
             "test-token",
             exists,
+            ("owner", "owner@example.test"),
         )
 
     def _remote_file(self, path: str) -> str:
@@ -343,6 +367,8 @@ class PublishCommandIntegrationTests(unittest.TestCase):
                 _payload: dict[str, object] | None = None,
             ) -> dict[str, object]:
                 api_calls.append((method, path))
+                if method == "GET" and path == "/user":
+                    return {"id": 123, "login": "owner", "email": None}
                 if method == "GET" and path.endswith("/branches/gh-pages"):
                     raise _GitHubApiError(404, "branch not found")
                 if method == "POST" and path.endswith("/pages"):
@@ -375,6 +401,13 @@ class PublishCommandIntegrationTests(unittest.TestCase):
                     for path in published_files
                 )
             )
+            commit_identity = subprocess.run(
+                [git, "--git-dir", str(remote), "log", "-1", "--format=%an|%ae", "gh-pages"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            self.assertEqual(commit_identity, "owner|123+owner@users.noreply.github.com")
             self.assertEqual(
                 (source / "README.md").read_text(encoding="utf-8"),
                 "# Local Pages\n\nA published note.\n",

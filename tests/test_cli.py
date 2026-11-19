@@ -42,6 +42,35 @@ class WorkspaceTests(unittest.TestCase):
             self.assertFalse(workspace.exists())
             self.assertTrue((source / "README.md").is_file())
 
+    def test_workspace_generates_viewers_without_copying_source_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "notes"
+            examples = source / "examples"
+            examples.mkdir(parents=True)
+            python_source = examples / "hello.py"
+            python_source.write_text('print("hello")\n', encoding="utf-8")
+            (examples / "requirements.txt").write_text("zensical\n", encoding="utf-8")
+            (examples / ".hidden.txt").write_text("private\n", encoding="utf-8")
+
+            with _project_workspace(source) as (workspace, config):
+                viewer = workspace / "docs" / "files" / "examples" / "hello.py.md"
+                markdown = viewer.read_text(encoding="utf-8")
+                generated_config = config.read_text(encoding="utf-8")
+
+                self.assertIn('--8<-- "source/examples/hello.py"', markdown)
+                self.assertNotIn('print("hello")', markdown)
+                self.assertTrue(
+                    (workspace / "docs" / "files" / "examples" / "requirements.txt.md").is_file()
+                )
+                self.assertFalse(
+                    (workspace / "docs" / "files" / "examples" / ".hidden.txt.md").exists()
+                )
+                self.assertIn("pymdownx.highlight.anchor_linenums = true", generated_config)
+                self.assertIn("pymdownx.snippets.base_path", generated_config)
+                self.assertIn("pymdownx.snippets.restrict_base_path = true", generated_config)
+
+            self.assertEqual(python_source.read_text(encoding="utf-8"), 'print("hello")\n')
+
 
 class OutputSafetyTests(unittest.TestCase):
     """验证构建结果只能覆盖同一路径的本工具产物。"""

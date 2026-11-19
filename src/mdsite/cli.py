@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .github_pages import GitHubPagesError, publish_site, resolve_token
+from .source_pages import write_source_pages
 
 _MARKER_NAME = ".mdsite-generated"
 
@@ -80,7 +81,9 @@ def _write_workspace(
     """生成仅存在于临时目录中的 Zensical 项目。"""
     docs = workspace / "docs"
     docs.mkdir(parents=True)
-    _create_directory_link(docs / "source", source)
+    source_link = docs / "source"
+    _create_directory_link(source_link, source)
+    source_page_count = write_source_pages(source_link, docs)
 
     overrides = workspace / "overrides"
     overrides.mkdir()
@@ -95,12 +98,19 @@ def _write_workspace(
         "",
         "请从左侧导航的 **source** 分类浏览文档。",
     ]
+    if source_page_count:
+        intro.extend(
+            [
+                "",
+                "常见源码和文本文件也可在[源码与文本文件](files/)中按目录浏览。",
+            ]
+        )
     readme = source / "README.md"
     if readme.is_file():
         intro.extend(["", f"[打开 README](source/{quote(readme.name)})"])
     (docs / "index.md").write_text("\n".join(intro) + "\n", encoding="utf-8")
 
-    excluded = ["/**", "!/source/**", "!/index.md"]
+    excluded = ["/**", "!/source/**", "!/files/**", "!/index.md"]
     if output_to_exclude is not None:
         relative_output = output_to_exclude.relative_to(source).as_posix()
         excluded.append(f"/source/{relative_output}/**")
@@ -122,6 +132,11 @@ def _write_workspace(
                 'custom_dir = "overrides"',
                 "",
                 "[project.markdown_extensions]",
+                "pymdownx.highlight.anchor_linenums = true",
+                'pymdownx.highlight.line_spans = "__span"',
+                "pymdownx.highlight.pygments_lang_class = true",
+                f"pymdownx.snippets.base_path = [{_toml_string(str(docs))}]",
+                "pymdownx.snippets.restrict_base_path = true",
                 "pymdownx.arithmatex.generic = true",
                 "pymdownx.superfences.custom_fences = [",
                 '  { name = "mermaid", class = "mermaid", '

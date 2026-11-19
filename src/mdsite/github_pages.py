@@ -154,6 +154,32 @@ def _api_request(
     return data
 
 
+def _git_identity(profile: dict[str, object]) -> tuple[str, str]:
+    """把当前 GitHub 账号转换为 Git author 和 committer 身份。"""
+    login = profile.get("login")
+    if not isinstance(login, str) or not login.strip() or any(c in login for c in "\r\n\0"):
+        raise GitHubPagesError("GitHub 未返回有效的账号名，无法设置发布提交身份。")
+    login = login.strip()
+
+    email = profile.get("email")
+    if (
+        isinstance(email, str)
+        and "@" in email.strip()
+        and not any(c in email for c in "\r\n\0")
+    ):
+        return login, email.strip()
+
+    user_id = profile.get("id")
+    if isinstance(user_id, bool) or not isinstance(user_id, (int, str)):
+        raise GitHubPagesError("GitHub 未返回有效的用户 ID，无法生成 noreply 提交邮箱。")
+    if isinstance(user_id, str) and not user_id.isdecimal():
+        raise GitHubPagesError("GitHub 未返回有效的用户 ID，无法生成 noreply 提交邮箱。")
+    numeric_id = int(user_id)
+    if numeric_id <= 0:
+        raise GitHubPagesError("GitHub 未返回有效的用户 ID，无法生成 noreply 提交邮箱。")
+    return login, f"{numeric_id}+{login}@users.noreply.github.com"
+
+
 def _repository_path(owner: str, repository: str) -> str:
     return f"/repos/{quote(owner, safe='')}/{quote(repository, safe='')}"
 
@@ -164,6 +190,7 @@ def _get_or_create_repository(
     token: str,
     create_repository: bool,
     description: str,
+    authenticated_user: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """检查仓库公开性；需要时只创建公开仓库。"""
     path = _repository_path(owner, repository)
@@ -177,7 +204,11 @@ def _get_or_create_repository(
                 ) from exc
             raise
 
-        account = _api_request(token, "GET", "/user")
+        account = (
+            authenticated_user
+            if authenticated_user is not None
+            else _api_request(token, "GET", "/user")
+        )
         login = str(account.get("login", ""))
         if not login:
             raise GitHubPagesError("GitHub 未返回当前账号名，无法创建仓库。")
@@ -371,6 +402,7 @@ def _publish_branch(
     clone_url: str,
     token: str,
     branch_exists: bool,
+    commit_identity: tuple[str, str],
     token_environment: str | None = None,
 ) -> bool:
     """通过临时 Git 仓库替换受 mdsite 标记保护的 gh-pages 内容。"""
@@ -378,6 +410,14 @@ def _publish_branch(
     full_name = f"{owner}/{repository}"
     marker_value = _pages_marker(full_name)
     environment = _git_environment(token, token_environment)
+    environment.update(
+        {
+            "GIT_AUTHOR_NAME": commit_identity[0],
+            "GIT_AUTHOR_EMAIL": commit_identity[1],
+            "GIT_COMMITTER_NAME": commit_identity[0],
+            "GIT_COMMITTER_EMAIL": commit_identity[1],
+        }
+    )
 
     with tempfile.TemporaryDirectory(prefix="mdsite-pages-") as directory:
         working_copy = Path(directory) / "pages"
@@ -451,13 +491,20 @@ def _publish_branch(
         shutil.copytree(site, working_copy, dirs_exist_ok=True)
         (working_copy / ".nojekyll").touch()
         (working_copy / _PAGES_MARKER).write_text(marker_value, encoding="utf-8")
-        _git("-C", str(working_copy), "config", "user.name", "mdsite", environment=environment)
+        _git(
+            "-C",
+            str(working_copy),
+            "config",
+            "user.name",
+            commit_identity[0],
+            environment=environment,
+        )
         _git(
             "-C",
             str(working_copy),
             "config",
             "user.email",
-            "mdsite@users.noreply.github.com",
+            commit_identity[1],
             environment=environment,
         )
         _git("-C", str(working_copy), "add", "--all", "--force", environment=environment)
@@ -520,7 +567,16 @@ def publish_site(
     """发布静态产物到公开仓库，并确保 Pages 使用 gh-pages 根目录。"""
     owner, repository = parse_repository(repository_value)
     token = resolve_token(explicit_token, token_environment)
-    repo = _get_or_create_repository(owner, repository, token, create_repository, description)
+    authenticated_user = _api_request(token, "GET", "/user")
+    commit_identity = _git_identity(authenticated_user)
+    repo = _get_or_create_repository(
+        owner,
+        repository,
+        token,
+        create_repository,
+        description,
+        authenticated_user,
+    )
     clone_url = str(repo["clone_url"])
     pages = _read_pages(token, owner, repository)
     _assert_pages_configuration(pages, _PAGES_BRANCH, configure_pages)
@@ -544,6 +600,7 @@ def publish_site(
         clone_url,
         token,
         branch_exists,
+        commit_identity,
         token_environment,
     )
     pages = _ensure_pages_configuration(
